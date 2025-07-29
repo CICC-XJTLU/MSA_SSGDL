@@ -10,7 +10,7 @@ from collections import OrderedDict
 def INF(B, H, W):
     return -torch.diag(torch.tensor(float("inf")).cuda().repeat(H), 0).unsqueeze(0).repeat(B * W, 1, 1)
 
-class SKAttention(nn.Module):
+class CSDSA(nn.Module):
     def __init__(self, in_channel=768, kernels=[1, 3, 5, 7], reduction=16, group=1, L=32):
         super(CSDSA, self).__init__()
         self.in_channels = in_channel
@@ -84,27 +84,6 @@ class SKAttention(nn.Module):
         V = (attention_weights * feats).sum(0)
         return V
 
-
-class CSDSA(nn.Module):
-    def __init__(self, in_channels):
-        super(CSDSA, self).__init__()
-        self.in_channels = in_channels
-        self.channels = in_channels // 8
-        self.ConvQuery = nn.Conv2d(self.in_channels, self.channels, kernel_size=1)
-        self.ConvKey = nn.Conv2d(self.in_channels, self.channels, kernel_size=1)
-        self.ConvValue = nn.Conv2d(self.in_channels, self.in_channels, kernel_size=1)
-
-        self.SoftMax = nn.Softmax(dim=3)
-        self.INF = INF 
-        self.gamma = nn.Parameter(torch.zeros(1))
-
-    def forward(self, x):
-        
-
-        
-        return self.gamma * () + x
-
-
 class SSGDL(nn.Module):
     def __init__(self, beta_shift_a=0.5, beta_shift_v=0.5, dropout_prob=0.2, name=""):
         super(SSGDL, self).__init__()
@@ -119,22 +98,18 @@ class SSGDL(nn.Module):
         self.layer_norm = nn.LayerNorm(TEXT_DIM)
         self.dropout = nn.Dropout(dropout_prob)
         self.lstm = nn.LSTM(TEXT_DIM, TEXT_DIM, batch_first=True)  # 使用LSTM替代GRU
-        self.ssgdl = SSGDL(TEXT_DIM)
+        self.csdsa = CSDSA(TEXT_DIM)
         
     def forward(self, text_embedding, visual=None, acoustic=None, visual_ids=None, acoustic_ids=None):
-        # Call external memory module
-        external_memory_output = self.memory_module(text_embedding)
         visual_ = self.visual_embedding(visual_ids)
         acoustic_ = self.acoustic_embedding(acoustic_ids) 
-        # 1. Embedding layer, The parameters of the embedding layer are learnable, map the nonverbal index vector,
-        # which is obtained by the feature transformation strategy, to a high-dimensional space.
         visual_ = self.cross_ATT_visual(text_embedding, visual_, visual_)
         acoustic_ = self.cross_ATT_acoustic(text_embedding, acoustic_, acoustic_)
 
         # textual
         b, n, c = text_embedding.size()
         text_embedding_re = text_embedding.view(b, c, h, w)
-        text_embedding = self.ssgdl(text_embedding_re)
+        text_embedding = self.csdsa(text_embedding_re)
         b, c, h, w = text_embedding.size()
         text_embedding = text_embedding.view(b, n, c)
 
@@ -142,8 +117,8 @@ class SSGDL(nn.Module):
         visual_ = torch.relu(visual_)
         h, w = 1, 50
         b, n, c = visual_.size()
-        visual_re = visual_.view(b, c, 1, n)  # 调整visual_的形状，注意参数顺序
-        visual_ = self.ssgdl(visual_re)
+        visual_re = visual_.view(b, c, 1, n)
+        visual_ = self.csdsa(visual_re)
         b, c, h, w = visual_.size()
         visual_ = visual_.view(b, n, c)
         visual_lstm, _ = self.lstm(visual_)
@@ -152,7 +127,7 @@ class SSGDL(nn.Module):
         acoustic_lstm, _ = self.lstm(acoustic_)
         b, n, c = acoustic_.size()
         acoustic_re = acoustic_.view(b, c, h, w)
-        acoustic_ = self.ssgdl(acoustic_re)
+        acoustic_ = self.csdsa(acoustic_re)
         b, c, h, w = acoustic_.size()
         acoustic_ = acoustic_.view(b, n, c)
 
@@ -161,7 +136,7 @@ class SSGDL(nn.Module):
         fusion = self.cat_connect_fusion(fusion)
         b, n, c = fusion.size()
         fusion_re = fusion.view(b, c, h, w)
-        fusion = self.ssgdl(fusion_re)
+        fusion = self.csdsa(fusion_re)
         b, c, h, w = fusion.size()
         fusion = fusion.view(b, n, c)
 
