@@ -84,6 +84,7 @@ class CSDSA(nn.Module):
         V = (attention_weights * feats).sum(0)
         return V
 
+
 class SSGDL(nn.Module):
     def __init__(self, beta_shift_a=0.5, beta_shift_v=0.5, dropout_prob=0.2, name=""):
         super(SSGDL, self).__init__()
@@ -101,8 +102,12 @@ class SSGDL(nn.Module):
         self.csdsa = CSDSA(TEXT_DIM)
         
     def forward(self, text_embedding, visual=None, acoustic=None, visual_ids=None, acoustic_ids=None):
+        # Call external memory module
+        external_memory_output = self.memory_module(text_embedding)
         visual_ = self.visual_embedding(visual_ids)
         acoustic_ = self.acoustic_embedding(acoustic_ids) 
+        # 1. Embedding layer, The parameters of the embedding layer are learnable, map the nonverbal index vector,
+        # which is obtained by the feature transformation strategy, to a high-dimensional space.
         visual_ = self.cross_ATT_visual(text_embedding, visual_, visual_)
         acoustic_ = self.cross_ATT_acoustic(text_embedding, acoustic_, acoustic_)
 
@@ -117,7 +122,7 @@ class SSGDL(nn.Module):
         visual_ = torch.relu(visual_)
         h, w = 1, 50
         b, n, c = visual_.size()
-        visual_re = visual_.view(b, c, 1, n)
+        visual_re = visual_.view(b, c, 1, n)  # 调整visual_的形状，注意参数顺序
         visual_ = self.csdsa(visual_re)
         b, c, h, w = visual_.size()
         visual_ = visual_.view(b, n, c)
